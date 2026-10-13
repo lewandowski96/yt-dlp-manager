@@ -7,6 +7,7 @@ import asyncio
 import json
 import os
 import platform
+import string
 import threading
 import uuid
 from pathlib import Path
@@ -33,8 +34,35 @@ app.add_middleware(
 # ---------- Paths ----------
 BASE_DIR = Path(__file__).resolve().parent.parent
 FRONTEND_DIR = BASE_DIR / "frontend"
-DOWNLOADS_DIR = BASE_DIR / "downloads"
-DOWNLOADS_DIR.mkdir(exist_ok=True)
+CONFIG_FILE = BASE_DIR / "config.json"
+DEFAULT_DOWNLOADS_DIR = BASE_DIR / "downloads"
+
+
+def _load_config() -> dict:
+    """Load config from disk, returning defaults if missing."""
+    if CONFIG_FILE.exists():
+        try:
+            return json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            pass
+    return {}
+
+
+def _save_config(config: dict):
+    """Persist config to disk."""
+    CONFIG_FILE.write_text(json.dumps(config, indent=2), encoding="utf-8")
+
+
+def get_downloads_dir() -> Path:
+    """Return the configured downloads directory, falling back to default."""
+    config = _load_config()
+    path_str = config.get("downloads_dir")
+    if path_str:
+        p = Path(path_str)
+        if p.is_dir():
+            return p
+    DEFAULT_DOWNLOADS_DIR.mkdir(exist_ok=True)
+    return DEFAULT_DOWNLOADS_DIR
 
 # Track active downloads: download_id -> { thread, queue, cancel_event }
 active_downloads: dict = {}
@@ -204,15 +232,90 @@ def _build_presets(info: dict) -> list[dict]:
 
 
 @app.get("/api/downloads-dir")
-async def get_downloads_dir():
+async def api_get_downloads_dir():
     """Return the current downloads directory."""
-    return {"path": str(DOWNLOADS_DIR)}
+    return {"path": str(get_downloads_dir())}
+
+
+@app.post("/api/downloads-dir")
+async def api_set_downloads_dir(body: dict):
+    """Set a new downloads directory. Body: { "path": "/some/path" }"""
+    new_path = body.get("path", "").strip()
+    if not new_path:
+        return JSONResponse(status_code=400, content={"error": "Path is required."})
+
+    p = Path(new_path)
+    if not p.exists():
+        # Try to create it
+        try:
+            p.mkdir(parents=True, exist_ok=True)
+        except OSError as e:
+            return JSONResponse(status_code=400, content={"error": f"Cannot create directory: {e}"})
+    elif not p.is_dir():
+        return JSONResponse(status_code=400, content={"error": "Path is not a directory."})
+
+    config = _load_config()
+    config["downloads_dir"] = str(p.resolve())
+    _save_config(config)
+    return {"path": str(p.resolve())}
+
+
+@app.get("/api/browse")
+async def api_browse_directory(path: str = ""):
+    """
+    List directories inside a given path for the directory browser modal.
+    Returns parent path and list of child directories.
+    """
+    try:
+        if not path:
+            # Start from the user's home directory
+            target = Path.home()
+        else:
+            target = Path(path)
+
+        if not target.exists() or not target.is_dir():
+            return JSONResponse(status_code=400, content={"error": "Directory not found."})
+
+        parent = str(target.parent) if target.parent != target else None
+
+        dirs = []
+        try:
+            for entry in sorted(target.iterdir()):
+                # Skip hidden files/dirs and non-directories
+                if entry.name.startswith("."):
+                    continue
+                if entry.is_dir():
+                    dirs.append({
+                        "name": entry.name,
+                        "path": str(entry),
+                    })
+        except PermissionError:
+            pass
+
+        # On Windows, provide drive letters as root options
+        drives = None
+        if platform.system() == "Windows" and (not path or target == target.parent):
+            drives = []
+            for letter in string.ascii_uppercase:
+                drive = Path(f"{letter}:\\")
+                if drive.exists():
+                    drives.append({"name": f"{letter}:\\", "path": str(drive)})
+
+        return {
+            "current": str(target),
+            "parent": parent,
+            "directories": dirs,
+            "drives": drives,
+        }
+
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": str(e)})
 
 
 @app.post("/api/open-downloads")
 async def open_downloads_folder():
     """Open the downloads folder in the system file manager."""
-    path = str(DOWNLOADS_DIR)
+    path = str(get_downloads_dir())
     system = platform.system()
     try:
         if system == "Darwin":
@@ -289,11 +392,13 @@ async def websocket_download(ws: WebSocket):
                     "status": "post_processing_done",
                 })
 
+        download_dir = get_downloads_dir()
+
         def run_download():
             try:
                 ydl_opts = {
                     "format": format_str,
-                    "outtmpl": str(DOWNLOADS_DIR / "%(title)s.%(ext)s"),
+                    "outtmpl": str(download_dir / "%(title)s.%(ext)s"),
                     "progress_hooks": [progress_hook],
                     "postprocessor_hooks": [postprocessor_hook],
                     "quiet": True,

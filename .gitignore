@@ -24,5 +24,8 @@ env/
 # Downloads
 downloads/
 
+# User config
+config.json
+
 # Logs
 *.log

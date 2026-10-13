@@ -44,6 +44,22 @@
     // ---------- State ----------
     let currentVideoInfo = null;
     let activeWebSocket = null;
+    let currentDownloadDir = "";
+    let browsingPath = "";
+
+    // ---------- Destination Bar ----------
+    const destPath = $("#dest-path");
+    const btnChangeDest = $("#btn-change-dest");
+
+    // ---------- Directory Modal ----------
+    const dirModal = $("#dir-modal");
+    const dirPathInput = $("#dir-path-input");
+    const btnGoPath = $("#btn-go-path");
+    const dirCurrentPath = $("#dir-current-path");
+    const dirListing = $("#dir-listing");
+    const btnCloseModal = $("#btn-close-modal");
+    const btnDirCancel = $("#btn-dir-cancel");
+    const btnDirSelect = $("#btn-dir-select");
 
     // ---------- Helpers ----------
 
@@ -101,6 +117,207 @@
         hideError();
         currentVideoInfo = null;
     }
+
+    // ---------- Download Directory ----------
+
+    async function loadDownloadDir() {
+        try {
+            const resp = await fetch("/api/downloads-dir");
+            const data = await resp.json();
+            currentDownloadDir = data.path;
+            destPath.textContent = data.path;
+            destPath.title = data.path;
+        } catch {
+            destPath.textContent = "Unknown";
+        }
+    }
+
+    async function setDownloadDir(path) {
+        try {
+            const resp = await fetch("/api/downloads-dir", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ path }),
+            });
+            const data = await resp.json();
+            if (!resp.ok) throw new Error(data.error);
+            currentDownloadDir = data.path;
+            destPath.textContent = data.path;
+            destPath.title = data.path;
+            return true;
+        } catch (err) {
+            showError(err.message || "Failed to set download directory.");
+            return false;
+        }
+    }
+
+    // ---------- Directory Browser Modal ----------
+
+    function openDirModal() {
+        dirModal.style.display = "flex";
+        browsingPath = currentDownloadDir;
+        dirPathInput.value = browsingPath;
+        browseTo(browsingPath);
+        document.body.style.overflow = "hidden";
+    }
+
+    function closeDirModal() {
+        dirModal.style.display = "none";
+        document.body.style.overflow = "";
+    }
+
+    async function browseTo(path) {
+        dirListing.innerHTML = '<div class="dir-loading"><div class="spinner"></div><span>Loading...</span></div>';
+
+        try {
+            const resp = await fetch(`/api/browse?path=${encodeURIComponent(path || "")}`);
+            const data = await resp.json();
+
+            if (!resp.ok) throw new Error(data.error);
+
+            browsingPath = data.current;
+            dirPathInput.value = browsingPath;
+
+            // Render breadcrumb
+            renderBreadcrumb(data.current);
+
+            // Render listing
+            renderDirListing(data);
+        } catch (err) {
+            dirListing.innerHTML = `<div class="dir-empty">Error: ${err.message}</div>`;
+        }
+    }
+
+    function renderBreadcrumb(pathStr) {
+        dirCurrentPath.innerHTML = "";
+
+        // Detect path separator
+        const sep = pathStr.includes("\\") ? "\\" : "/";
+        const parts = pathStr.split(sep).filter(Boolean);
+
+        // If Unix-like, we need the leading /
+        const isUnix = sep === "/";
+
+        parts.forEach((part, i) => {
+            if (i > 0 || isUnix) {
+                const sepSpan = document.createElement("span");
+                sepSpan.className = "path-sep";
+                sepSpan.textContent = sep;
+                dirCurrentPath.appendChild(sepSpan);
+            }
+
+            const seg = document.createElement("span");
+            seg.className = "path-segment";
+            seg.textContent = part;
+
+            // Build partial path for this segment
+            let partial;
+            if (isUnix) {
+                partial = "/" + parts.slice(0, i + 1).join("/");
+            } else {
+                partial = parts.slice(0, i + 1).join("\\");
+                // Ensure drive letter has backslash
+                if (i === 0 && !partial.endsWith("\\")) partial += "\\";
+            }
+
+            seg.addEventListener("click", () => browseTo(partial));
+            dirCurrentPath.appendChild(seg);
+        });
+    }
+
+    function renderDirListing(data) {
+        dirListing.innerHTML = "";
+
+        // Parent directory (go up)
+        if (data.parent) {
+            const upItem = document.createElement("div");
+            upItem.className = "dir-item dir-up";
+            upItem.innerHTML = `
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="15 18 9 12 15 6"/>
+                </svg>
+                <span>.. (Parent Directory)</span>
+            `;
+            upItem.addEventListener("click", () => browseTo(data.parent));
+            dirListing.appendChild(upItem);
+        }
+
+        // Drive letters (Windows)
+        if (data.drives && data.drives.length > 0) {
+            data.drives.forEach((drive) => {
+                const item = document.createElement("div");
+                item.className = "dir-item";
+                item.innerHTML = `
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <rect x="2" y="2" width="20" height="8" rx="2" ry="2"/>
+                        <rect x="2" y="14" width="20" height="8" rx="2" ry="2"/>
+                        <line x1="6" y1="6" x2="6.01" y2="6"/>
+                        <line x1="6" y1="18" x2="6.01" y2="18"/>
+                    </svg>
+                    <span>${drive.name}</span>
+                `;
+                item.addEventListener("click", () => browseTo(drive.path));
+                dirListing.appendChild(item);
+            });
+        }
+
+        // Directories
+        if (data.directories.length === 0 && !data.parent && (!data.drives || data.drives.length === 0)) {
+            dirListing.innerHTML = '<div class="dir-empty">No subdirectories found</div>';
+            return;
+        }
+
+        data.directories.forEach((dir) => {
+            const item = document.createElement("div");
+            item.className = "dir-item";
+            item.innerHTML = `
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+                </svg>
+                <span>${dir.name}</span>
+            `;
+            item.addEventListener("click", () => browseTo(dir.path));
+            dirListing.appendChild(item);
+        });
+    }
+
+    // Modal event listeners
+    btnChangeDest.addEventListener("click", openDirModal);
+    btnCloseModal.addEventListener("click", closeDirModal);
+    btnDirCancel.addEventListener("click", closeDirModal);
+
+    // Close modal on overlay click
+    dirModal.addEventListener("click", (e) => {
+        if (e.target === dirModal) closeDirModal();
+    });
+
+    // Close modal on Escape
+    document.addEventListener("keydown", (e) => {
+        if (e.key === "Escape" && dirModal.style.display !== "none") {
+            closeDirModal();
+        }
+    });
+
+    // Go to typed path
+    btnGoPath.addEventListener("click", () => {
+        const path = dirPathInput.value.trim();
+        if (path) browseTo(path);
+    });
+
+    dirPathInput.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") {
+            const path = dirPathInput.value.trim();
+            if (path) browseTo(path);
+        }
+    });
+
+    // Select current folder
+    btnDirSelect.addEventListener("click", async () => {
+        if (browsingPath) {
+            const ok = await setDownloadDir(browsingPath);
+            if (ok) closeDirModal();
+        }
+    });
 
     // ---------- API Calls ----------
 
@@ -435,4 +652,8 @@
         }
     });
 
+    // ---------- Initialize ----------
+    loadDownloadDir();
+
 })();
+
