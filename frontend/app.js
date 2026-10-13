@@ -469,10 +469,14 @@
 
     // ---------- Formats Toggle ----------
 
+    const chevron = btnToggleFormats.querySelector(".chevron");
     btnToggleFormats.addEventListener("click", () => {
         const isOpen = formatsContent.style.display !== "none";
         formatsContent.style.display = isOpen ? "none" : "block";
         btnToggleFormats.classList.toggle("open", !isOpen);
+        if (chevron) {
+            chevron.textContent = isOpen ? "[+]" : "[-]";
+        }
     });
 
     // ---------- Download via WebSocket ----------
@@ -650,6 +654,23 @@
         } catch {
             // Clipboard API may not be available — silently ignore
         }
+    });
+
+    // ---------- Theme Switcher ----------
+    const themeBtns = document.querySelectorAll(".theme-btn");
+    const savedTheme = localStorage.getItem("retro-theme") || "amber";
+    applyTheme(savedTheme);
+
+    function applyTheme(theme) {
+        document.documentElement.setAttribute("data-theme", theme);
+        localStorage.setItem("retro-theme", theme);
+        themeBtns.forEach((btn) => {
+            btn.classList.toggle("active", btn.dataset.theme === theme);
+        });
+    }
+
+    themeBtns.forEach((btn) => {
+        btn.addEventListener("click", () => applyTheme(btn.dataset.theme));
     });
 
     // ---------- Initialize ----------
