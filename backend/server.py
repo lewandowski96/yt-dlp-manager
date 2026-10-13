@@ -7,12 +7,14 @@ import asyncio
 import json
 import os
 import platform
+import re
 import string
 import threading
 import uuid
 from pathlib import Path
 from queue import Queue
 from typing import Optional
+from urllib.parse import parse_qs, urlparse
 
 import yt_dlp
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
@@ -76,16 +78,78 @@ async def serve_index():
     return FileResponse(str(FRONTEND_DIR / "index.html"))
 
 
+def is_playlist_url(url: str) -> bool:
+    """Check if a URL refers purely to a playlist rather than a single video."""
+    try:
+        parsed = urlparse(url)
+        path = parsed.path.lower()
+        qs = parse_qs(parsed.query)
+
+        # YouTube pure playlist
+        if "playlist" in path:
+            return True
+
+        # YouTube URL with list= but no single video identifier
+        if "list" in qs and "v" not in qs:
+            parts = [p for p in path.split("/") if p]
+            # youtu.be shortlink might have video in path like youtu.be/<id>?list=...
+            if parsed.netloc.endswith("youtu.be") and parts:
+                return False
+            return True
+
+        if "/playlists" in path:
+            return True
+    except Exception:
+        pass
+    return False
+
+
+def clean_error_message(err: str, url: str = "") -> str:
+    """Convert raw yt-dlp error output into user-friendly messages."""
+    err_lower = err.lower()
+
+    if is_playlist_url(url) or "playlist" in err_lower:
+        return "Playlist links are not yet supported. Please paste the link to an individual video."
+
+    if "please sign in" in err_lower or "cookies" in err_lower:
+        if "list=" in url:
+            return "Playlist links are not yet supported. Please paste the link to an individual video."
+        return "This video requires signing in (it may be age-restricted or private). Please try a public video."
+
+    if "requested format is not available" in err_lower:
+        return "The requested format is not available for this video. Please try another quality option."
+
+    if "video unavailable" in err_lower or "this video is unavailable" in err_lower:
+        return "This video is unavailable. It may have been removed or made private."
+
+    if "unable to download webpage" in err_lower or "connection refused" in err_lower:
+        return "Could not connect to the video host. Please check your network connection and URL."
+
+    # Strip raw CLI formatting like 'ERROR: [youtube] id: '
+    cleaned = re.sub(r"^ERROR:\s*(\[[^\]]+\]\s*([^:]+:\s*)?)?", "", err).strip()
+    cleaned = re.sub(r"See https?://\S+", "", cleaned).strip()
+    return cleaned if cleaned else err
+
+
 # ---------- REST Endpoints ----------
 
 @app.get("/api/info")
 async def get_video_info(url: str):
     """Fetch video metadata and available formats without downloading."""
+    url = url.strip()
+    if is_playlist_url(url):
+        return JSONResponse(
+            status_code=400,
+            content={"error": "Playlist links are not yet supported. Please paste the link to an individual video."},
+        )
+
     try:
         ydl_opts = {
             "quiet": True,
             "no_warnings": True,
             "skip_download": True,
+            "noplaylist": True,
+            "extract_flat": "in_playlist",
         }
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=False)
@@ -94,6 +158,13 @@ async def get_video_info(url: str):
             return JSONResponse(
                 status_code=400,
                 content={"error": "Could not extract video information."},
+            )
+
+        # Check if the extracted result is a playlist
+        if info.get("_type") == "playlist" or ("entries" in info and not info.get("formats")):
+            return JSONResponse(
+                status_code=400,
+                content={"error": "Playlist links are not yet supported. Please paste the link to an individual video."},
             )
 
         # Build clean format list
@@ -155,9 +226,9 @@ async def get_video_info(url: str):
         }
 
     except yt_dlp.utils.DownloadError as e:
-        return JSONResponse(status_code=400, content={"error": str(e)})
+        return JSONResponse(status_code=400, content={"error": clean_error_message(str(e), url)})
     except Exception as e:
-        return JSONResponse(status_code=500, content={"error": str(e)})
+        return JSONResponse(status_code=500, content={"error": clean_error_message(str(e), url)})
 
 
 def _build_presets(info: dict) -> list[dict]:
@@ -403,6 +474,7 @@ async def websocket_download(ws: WebSocket):
                     "postprocessor_hooks": [postprocessor_hook],
                     "quiet": True,
                     "no_warnings": True,
+                    "noplaylist": True,
                     "merge_output_format": "mp4",
                 }
                 if postprocessors:
@@ -421,7 +493,7 @@ async def websocket_download(ws: WebSocket):
                     "type": "error",
                     "download_id": download_id,
                     "status": "error",
-                    "error": str(e),
+                    "error": clean_error_message(str(e), url),
                 })
 
         # Start download in background thread
