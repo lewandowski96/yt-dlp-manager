@@ -110,12 +110,18 @@
         }
     }
 
+    function isDownloading() {
+        return activeWebSocket !== null || (downloadSection && downloadSection.style.display !== "none");
+    }
+
     function resetToInitial() {
+        if (!isDownloading()) {
+            downloadSection.style.display = "none";
+            completeSection.style.display = "none";
+            currentVideoInfo = null;
+        }
         videoSection.style.display = "none";
-        downloadSection.style.display = "none";
-        completeSection.style.display = "none";
         hideError();
-        currentVideoInfo = null;
     }
 
     // ---------- Download Directory ----------
@@ -586,6 +592,10 @@
 
     // Fetch Info
     btnFetch.addEventListener("click", () => {
+        if (isDownloading()) {
+            showError("A download is currently in progress. Please wait for it to complete or cancel it first.");
+            return;
+        }
         const url = urlInput.value.trim();
         if (!url) {
             showError("Please enter a valid URL.");
@@ -610,7 +620,9 @@
     btnClearUrl.addEventListener("click", () => {
         urlInput.value = "";
         btnClearUrl.style.display = "none";
-        resetToInitial();
+        if (!isDownloading()) {
+            resetToInitial();
+        }
         urlInput.focus();
     });
 
