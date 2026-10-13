@@ -8,6 +8,7 @@ import json
 import os
 import platform
 import re
+import shutil
 import string
 import threading
 import uuid
@@ -66,6 +67,25 @@ def get_downloads_dir() -> Path:
     DEFAULT_DOWNLOADS_DIR.mkdir(exist_ok=True)
     return DEFAULT_DOWNLOADS_DIR
 
+
+def get_cookie_opts() -> dict:
+    """Return yt-dlp cookie and JS runtime options based on current config."""
+    config = _load_config()
+    source = config.get("cookie_source", "chrome").lower()
+    opts = {}
+    if source in ("chrome", "firefox", "safari", "brave", "edge", "opera", "vivaldi", "chromium"):
+        opts["cookiesfrombrowser"] = (source,)
+    elif source == "file":
+        cookie_file = config.get("cookie_file", "")
+        if cookie_file and Path(cookie_file).is_file():
+            opts["cookiefile"] = cookie_file
+
+    # Enable node JS runtime if node is installed (required for YouTube n-challenge solving)
+    if shutil.which("node"):
+        opts["js_runtimes"] = {"node": {}}
+    return opts
+
+
 # Track active downloads: download_id -> { thread, queue, cancel_event }
 active_downloads: dict = {}
 
@@ -114,7 +134,10 @@ def clean_error_message(err: str, url: str = "") -> str:
     if "please sign in" in err_lower or "cookies" in err_lower:
         if "list=" in url:
             return "Playlist links are not yet supported. Please paste the link to an individual video."
-        return "This video requires signing in (it may be age-restricted or private). Please try a public video."
+        return "This video requires signing in. Select your browser in the [COOKIES] menu in the header to authenticate."
+
+    if "could not copy" in err_lower and "cookies database" in err_lower:
+        return "Could not read cookies from the selected browser. Please make sure the browser is installed and closed to unlock its database."
 
     if "requested format is not available" in err_lower:
         return "The requested format is not available for this video. Please try another quality option."
@@ -151,6 +174,7 @@ async def get_video_info(url: str):
             "noplaylist": True,
             "extract_flat": "in_playlist",
         }
+        ydl_opts.update(get_cookie_opts())
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=False)
 
@@ -331,6 +355,41 @@ async def api_set_downloads_dir(body: dict):
     return {"path": str(p.resolve())}
 
 
+@app.get("/api/cookies")
+async def api_get_cookies():
+    """Return the configured cookie source."""
+    config = _load_config()
+    return {
+        "source": config.get("cookie_source", "chrome"),
+        "file": config.get("cookie_file", ""),
+    }
+
+
+@app.post("/api/cookies")
+async def api_set_cookies(body: dict):
+    """Set the cookie source (e.g. 'chrome', 'firefox', 'none', 'file')."""
+    source = body.get("source", "none").strip().lower()
+    file_path = body.get("file", "").strip()
+    valid_sources = ("none", "chrome", "firefox", "safari", "brave", "edge", "opera", "vivaldi", "chromium", "file")
+    if source not in valid_sources:
+        return JSONResponse(status_code=400, content={"error": f"Invalid cookie source: {source}"})
+
+    if source == "file" and file_path:
+        p = Path(file_path)
+        if not p.is_file():
+            return JSONResponse(status_code=400, content={"error": "Cookie file not found."})
+
+    config = _load_config()
+    config["cookie_source"] = source
+    if file_path:
+        config["cookie_file"] = file_path
+    elif source != "file":
+        config.pop("cookie_file", None)
+    _save_config(config)
+
+    return {"status": "ok", "source": source, "file": config.get("cookie_file", "")}
+
+
 @app.get("/api/browse")
 async def api_browse_directory(path: str = ""):
     """
@@ -477,6 +536,7 @@ async def websocket_download(ws: WebSocket):
                     "noplaylist": True,
                     "merge_output_format": "mp4",
                 }
+                ydl_opts.update(get_cookie_opts())
                 if postprocessors:
                     ydl_opts["postprocessors"] = postprocessors
 

@@ -673,8 +673,39 @@
         btn.addEventListener("click", () => applyTheme(btn.dataset.theme));
     });
 
+    // ---------- Cookie Settings ----------
+    const cookieSelect = $("#cookie-select");
+
+    async function loadCookieSetting() {
+        try {
+            const resp = await fetch("/api/cookies");
+            const data = await resp.json();
+            if (data.source && cookieSelect) {
+                cookieSelect.value = data.source;
+            }
+        } catch {
+            // ignore
+        }
+    }
+
+    if (cookieSelect) {
+        cookieSelect.addEventListener("change", async () => {
+            const source = cookieSelect.value;
+            try {
+                await fetch("/api/cookies", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ source }),
+                });
+            } catch (err) {
+                showError("Failed to update cookie source: " + err.message);
+            }
+        });
+    }
+
     // ---------- Initialize ----------
     loadDownloadDir();
+    loadCookieSetting();
 
 })();
 

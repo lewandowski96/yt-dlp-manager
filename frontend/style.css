@@ -246,6 +246,40 @@ a:hover {
     gap: 12px;
 }
 
+/* Cookie Picker */
+.cookie-picker {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    padding: 2px 6px;
+    box-shadow: 2px 2px 0px #040506;
+}
+
+.cookie-label {
+    font-size: 0.7rem;
+    color: var(--text-muted);
+    font-weight: 700;
+}
+
+.retro-select {
+    background: var(--bg-input);
+    color: var(--accent-primary);
+    border: 1px solid var(--border-color);
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    font-weight: 700;
+    padding: 2px 4px;
+    outline: none;
+    cursor: pointer;
+    border-radius: var(--radius-sm);
+}
+
+.retro-select:focus {
+    border-color: var(--accent-primary);
+}
+
 /* Theme Picker */
 .theme-picker {
     display: flex;
