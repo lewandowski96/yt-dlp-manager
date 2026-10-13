@@ -420,10 +420,10 @@
 
             const badgeClass =
                 fmt.type === "video+audio" ? "video-audio" :
-                fmt.type === "video" ? "video-only" : "audio-only";
+                    fmt.type === "video" ? "video-only" : "audio-only";
             const badgeLabel =
                 fmt.type === "video+audio" ? "V+A" :
-                fmt.type === "video" ? "Video" : "Audio";
+                    fmt.type === "video" ? "Video" : "Audio";
 
             tr.innerHTML = `
                 <td><code>${fmt.format_id}</code></td>
@@ -593,7 +593,7 @@
     // Fetch Info
     btnFetch.addEventListener("click", () => {
         if (isDownloading()) {
-            showError("A download is currently in progress. Please wait for it to complete or cancel it first.");
+            showError("Parallel downloads are coming soon. Not yet supported.");
             return;
         }
         const url = urlInput.value.trim();
