@@ -1050,6 +1050,88 @@ a:hover {
     padding-top: 10px;
 }
 
+/* ---------- App Footer ---------- */
+.app-footer {
+    margin-top: 24px;
+    padding-top: 20px;
+    border-top: 1px dashed var(--border-color);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    text-align: center;
+}
+
+.footer-slogan {
+    font-size: 0.88rem;
+    color: var(--text-secondary);
+    font-style: italic;
+    letter-spacing: 0.02em;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.footer-slogan-prefix {
+    color: var(--accent-primary);
+    font-weight: 700;
+    font-style: normal;
+}
+
+.footer-links {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 0.82rem;
+}
+
+.footer-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--text-secondary);
+    text-decoration: none;
+    padding: 4px 8px;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    background: var(--bg-secondary);
+    box-shadow: 2px 2px 0px #040506;
+    transition: all 0.15s ease;
+    user-select: none;
+}
+
+.footer-link svg {
+    flex-shrink: 0;
+    color: var(--accent-primary);
+    transition: transform 0.15s ease;
+}
+
+.footer-link:hover {
+    color: var(--accent-contrast);
+    background: var(--accent-primary);
+    border-color: var(--accent-primary);
+    transform: translate(-1px, -1px);
+    box-shadow: 3px 3px 0px #040506;
+    text-decoration: none;
+}
+
+.footer-link:hover svg {
+    color: var(--accent-contrast);
+    transform: scale(1.1);
+}
+
+.footer-link:active {
+    transform: translate(1px, 1px);
+    box-shadow: 1px 1px 0px #040506;
+}
+
+.footer-separator {
+    color: var(--text-muted);
+    font-size: 0.85rem;
+    user-select: none;
+}
+
 /* ---------- Responsive ---------- */
 @media (max-width: 600px) {
     .video-preview {
@@ -1064,4 +1146,9 @@ a:hover {
     .presets-grid {
         grid-template-columns: 1fr;
     }
+    .footer-links {
+        flex-wrap: wrap;
+        justify-content: center;
+    }
 }
+
