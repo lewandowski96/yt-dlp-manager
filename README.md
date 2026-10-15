@@ -21,11 +21,6 @@
 
 ## Highlights
 
-- 🕹️ **Retro Terminal Aesthetic** — Built entirely with **IBM Plex Mono**, sharp 1px borders, tactile buttons, subtle CRT scanlines, and zero bloated frameworks.
-- 🎨 **3 Vintage Phosphor Palettes** — Instant one-click theme switcher in the header:
-  - **`A`** — Amber Phosphor *(Classic vintage terminal)*
-  - **`G`** — Green Phosphor *(Matrix CRT screen)*
-  - **`C`** — Cyan Phosphor *(80s/90s Unix workstation)*
 - 🍪 **Age-Restricted & Auth Support** — Built-in **Cookie Sharing** from Chrome, Firefox, Safari, Brave, or Edge so you can download age-restricted, sensitive, and signed-in videos seamlessly.
 - 📁 **Configurable Download Destination** — Dedicated retro directory browser modal with breadcrumbs, subfolder drilldown, and persistent folder saving in `config.json`.
 - ⚡ **One-Click Quick Presets** — Instantly download **Best Quality**, **1080p**, **720p**, **480p**, **MP3 Audio (192kbps)**, or **M4A (AAC)**.
