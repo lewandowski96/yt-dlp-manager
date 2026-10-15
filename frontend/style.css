@@ -162,13 +162,15 @@ a:hover {
 .app-container {
     max-width: 820px;
     margin: 0 auto;
-    padding: 24px 16px 48px;
+    padding: 24px 16px;
+    min-height: 100vh;
     display: flex;
     flex-direction: column;
     gap: 16px;
     position: relative;
     z-index: 10;
 }
+
 
 /* ---------- Retro Card ---------- */
 .retro-card {
@@ -1052,8 +1054,8 @@ a:hover {
 
 /* ---------- App Footer ---------- */
 .app-footer {
-    margin-top: 24px;
-    padding-top: 20px;
+    margin-top: auto;
+    padding-top: 24px;
     border-top: 1px dashed var(--border-color);
     display: flex;
     flex-direction: column;
@@ -1062,6 +1064,7 @@ a:hover {
     gap: 12px;
     text-align: center;
 }
+
 
 .footer-slogan {
     font-size: 0.88rem;
