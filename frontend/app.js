@@ -42,11 +42,23 @@
     const btnOpenFolder = $("#btn-open-folder");
     const btnDownloadAnother = $("#btn-download-another");
 
+    // ---------- Queue Elements ----------
+    const queueSection = $("#queue-section");
+    const queueCountBadge = $("#queue-count-badge");
+    const btnClearQueue = $("#btn-clear-queue");
+    const queueList = $("#queue-list");
+    const queueModeBanner = $("#queue-mode-banner");
+    const queueModeText = $("#queue-mode-text");
+
     // ---------- State ----------
     let currentVideoInfo = null;
     let activeWebSocket = null;
     let currentDownloadDir = "";
     let browsingPath = "";
+    const MAX_QUEUE_SIZE = 5;
+    let downloadQueue = [];
+    let activeJob = null;
+    let completedJobs = [];
 
     // ---------- Destination Bar ----------
     const destPath = $("#dest-path");
@@ -111,8 +123,18 @@
         }
     }
 
+    function escapeHtml(str) {
+        if (!str) return "";
+        return String(str)
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;")
+            .replace(/'/g, "&#039;");
+    }
+
     function isDownloading() {
-        return activeWebSocket !== null || (downloadSection && downloadSection.style.display !== "none");
+        return activeWebSocket !== null && (activeWebSocket.readyState === WebSocket.OPEN || activeWebSocket.readyState === WebSocket.CONNECTING);
     }
 
     function resetToInitial() {
@@ -376,24 +398,180 @@
         renderFormatsTable(info.formats);
 
         videoSection.style.display = "flex";
+        updateQueueModeBanner();
+    }
+
+    // ---------- Queue Logic ----------
+
+    function loadSavedQueue() {
+        try {
+            const saved = sessionStorage.getItem("ytdlp_download_queue");
+            if (saved) {
+                downloadQueue = JSON.parse(saved);
+            }
+        } catch {}
+        updateQueueUI();
+    }
+
+    function saveQueue() {
+        try {
+            sessionStorage.setItem("ytdlp_download_queue", JSON.stringify(downloadQueue));
+        } catch {}
+    }
+
+    function updateQueueUI() {
+        renderQueue();
+        updateQueueModeBanner();
+    }
+
+    function updateQueueModeBanner() {
+        if (!queueModeBanner) return;
+        if (isDownloading()) {
+            queueModeBanner.style.display = "flex";
+            const isFull = downloadQueue.length >= MAX_QUEUE_SIZE;
+            queueModeText.textContent = isFull
+                ? `DOWNLOAD IN PROGRESS: Queue is full (${downloadQueue.length}/${MAX_QUEUE_SIZE}). Wait for downloads to finish.`
+                : `DOWNLOAD IN PROGRESS: Select a preset or format to add to queue (${downloadQueue.length}/${MAX_QUEUE_SIZE}).`;
+        } else {
+            queueModeBanner.style.display = "none";
+        }
+    }
+
+    function renderQueue() {
+        if (!queueSection || !queueList) return;
+
+        const count = downloadQueue.length;
+        if (queueCountBadge) {
+            queueCountBadge.textContent = `(${count}/${MAX_QUEUE_SIZE})`;
+            queueCountBadge.classList.toggle("full", count >= MAX_QUEUE_SIZE);
+        }
+
+        if (count === 0) {
+            queueList.innerHTML = `<div class="queue-empty-msg">[ QUEUE IS EMPTY — ADD UP TO 5 URLS ]</div>`;
+            if (btnClearQueue) btnClearQueue.style.display = "none";
+            if (!isDownloading()) {
+                queueSection.style.display = "none";
+            } else {
+                queueSection.style.display = "block";
+            }
+            return;
+        }
+
+        queueSection.style.display = "block";
+        if (btnClearQueue) btnClearQueue.style.display = "inline-block";
+        queueList.innerHTML = "";
+
+        downloadQueue.forEach((item, index) => {
+            const row = document.createElement("div");
+            row.className = "queue-item";
+            row.dataset.id = item.id;
+            row.innerHTML = `
+                <span class="queue-item-index">#${index + 1}</span>
+                <img class="queue-item-thumb" src="${escapeHtml(item.thumbnail || '')}" alt="" onerror="this.style.display='none'" />
+                <div class="queue-item-info">
+                    <div class="queue-item-title" title="${escapeHtml(item.title)}">${escapeHtml(item.title)}</div>
+                    <div class="queue-item-meta">
+                        <span>${escapeHtml(item.channel || 'Video')}</span>
+                        <span>•</span>
+                        <span class="queue-item-format">${escapeHtml(item.formatLabel || 'Default')}</span>
+                        <span>•</span>
+                        <span class="queue-item-status">[WAITING]</span>
+                    </div>
+                </div>
+                <div class="queue-item-actions">
+                    <button class="btn-remove-queue" data-id="${item.id}" title="Remove from queue">[X]</button>
+                </div>
+            `;
+            queueList.appendChild(row);
+        });
+
+        queueList.querySelectorAll(".btn-remove-queue").forEach(btn => {
+            btn.addEventListener("click", (e) => {
+                e.stopPropagation();
+                removeFromQueue(btn.dataset.id);
+            });
+        });
+    }
+
+    function removeFromQueue(id) {
+        downloadQueue = downloadQueue.filter(item => item.id !== id);
+        saveQueue();
+        updateQueueUI();
+    }
+
+    function clearQueue() {
+        downloadQueue = [];
+        saveQueue();
+        updateQueueUI();
+    }
+
+    function addToQueue(item) {
+        if (downloadQueue.length >= MAX_QUEUE_SIZE) {
+            showError(`Queue is full (maximum ${MAX_QUEUE_SIZE} queued items). Please wait for downloads to finish.`);
+            return false;
+        }
+
+        downloadQueue.push(item);
+        saveQueue();
+        updateQueueUI();
+
+        // Clear input field and video preview so user can paste the next URL
+        urlInput.value = "";
+        btnClearUrl.style.display = "none";
+        videoSection.style.display = "none";
+        urlInput.focus();
+
+        return true;
+    }
+
+    function processNextInQueue() {
+        if (downloadQueue.length === 0) {
+            activeJob = null;
+            updateQueueUI();
+            return;
+        }
+
+        const next = downloadQueue.shift();
+        saveQueue();
+        updateQueueUI();
+
+        activeJob = next;
+        startDownload(next.url, next.formatStr, next.postprocessors, next);
     }
 
     function renderPresets(presets) {
         presetsGrid.innerHTML = "";
+        const downloading = isDownloading();
         presets.forEach((preset) => {
             const card = document.createElement("div");
             card.className = "preset-card";
+            if (downloading) {
+                card.classList.add("btn-queued-active");
+            }
             card.innerHTML = `
                 <span class="preset-icon">${preset.icon}</span>
-                <span class="preset-label">${preset.label}</span>
+                <span class="preset-label">${downloading ? `[+ QUEUE] ` : ""}${preset.label}</span>
                 <span class="preset-desc">${preset.description}</span>
             `;
             card.addEventListener("click", () => {
-                startDownload(
-                    currentVideoInfo.webpage_url,
-                    preset.format_str,
-                    preset.postprocessors || []
-                );
+                const job = {
+                    id: Date.now().toString() + Math.random().toString(36).substring(2, 6),
+                    url: currentVideoInfo.webpage_url,
+                    title: currentVideoInfo.title || "Video",
+                    thumbnail: currentVideoInfo.thumbnail || "",
+                    channel: currentVideoInfo.channel || "",
+                    duration: currentVideoInfo.duration || 0,
+                    formatStr: preset.format_str,
+                    postprocessors: preset.postprocessors || [],
+                    formatLabel: preset.label,
+                };
+
+                if (isDownloading()) {
+                    addToQueue(job);
+                } else {
+                    activeJob = job;
+                    startDownload(job.url, job.formatStr, job.postprocessors, job);
+                }
             });
             presetsGrid.appendChild(card);
         });
@@ -401,6 +579,7 @@
 
     function renderFormatsTable(formats) {
         formatsTbody.innerHTML = "";
+        const downloading = isDownloading();
 
         // Sort: video+audio first, then video, then audio; by resolution descending
         const sorted = [...formats].sort((a, b) => {
@@ -433,7 +612,7 @@
                 <td>${fmt.fps || "—"}</td>
                 <td>${formatFilesize(fmt.filesize)}</td>
                 <td><span class="type-badge ${badgeClass}">${badgeLabel}</span></td>
-                <td><button class="btn-download-format" data-format-id="${fmt.format_id}">Download</button></td>
+                <td><button class="btn-download-format" data-format-id="${fmt.format_id}">${downloading ? "+ Queue" : "Download"}</button></td>
             `;
             formatsTbody.appendChild(tr);
         });
@@ -442,7 +621,24 @@
         formatsTbody.querySelectorAll(".btn-download-format").forEach((btn) => {
             btn.addEventListener("click", () => {
                 const fmtId = btn.dataset.formatId;
-                startDownload(currentVideoInfo.webpage_url, fmtId);
+                const job = {
+                    id: Date.now().toString() + Math.random().toString(36).substring(2, 6),
+                    url: currentVideoInfo.webpage_url,
+                    title: currentVideoInfo.title || "Video",
+                    thumbnail: currentVideoInfo.thumbnail || "",
+                    channel: currentVideoInfo.channel || "",
+                    duration: currentVideoInfo.duration || 0,
+                    formatStr: fmtId,
+                    postprocessors: [],
+                    formatLabel: `Format ${fmtId}`,
+                };
+
+                if (isDownloading()) {
+                    addToQueue(job);
+                } else {
+                    activeJob = job;
+                    startDownload(job.url, job.formatStr, job.postprocessors, job);
+                }
             });
         });
 
@@ -488,20 +684,26 @@
 
     // ---------- Download via WebSocket ----------
 
-    function startDownload(url, formatStr, postprocessors = []) {
+    function startDownload(url, formatStr, postprocessors = [], jobInfo = null) {
         hideError();
         videoSection.style.display = "none";
         completeSection.style.display = "none";
         downloadSection.style.display = "block";
 
+        if (jobInfo) {
+            activeJob = jobInfo;
+        }
+
         // Reset progress UI
         downloadStatusText.textContent = "STATUS: DOWNLOADING...";
-        downloadFilename.textContent = "";
+        downloadFilename.textContent = activeJob ? activeJob.title : "";
         progressBarFill.style.width = "0%";
         progressPercent.textContent = "0%";
         progressSpeed.textContent = "-- KB/s";
         progressEta.textContent = "ETA: --:--";
         downloadStatusIcon.innerHTML = '<span class="status-pulse">&gt;&gt;</span>';
+
+        updateQueueUI();
 
         const protocol = location.protocol === "https:" ? "wss:" : "ws:";
         const ws = new WebSocket(`${protocol}//${location.host}/ws/download`);
@@ -522,25 +724,31 @@
 
         ws.addEventListener("close", () => {
             activeWebSocket = null;
+            updateQueueUI();
         });
 
         ws.addEventListener("error", () => {
             showError("WebSocket connection failed. Is the server running?");
-            downloadSection.style.display = "none";
-            videoSection.style.display = "flex";
+            if (downloadQueue.length > 0) {
+                setTimeout(() => processNextInQueue(), 1000);
+            } else {
+                activeJob = null;
+                downloadSection.style.display = "none";
+                updateQueueUI();
+            }
         });
     }
 
     function handleDownloadEvent(msg) {
         switch (msg.type) {
             case "started":
-                downloadStatusText.textContent = "Downloading...";
+                downloadStatusText.textContent = "STATUS: DOWNLOADING...";
                 break;
 
             case "progress":
                 if (msg.status === "downloading") {
                     downloadStatusText.textContent = "STATUS: DOWNLOADING...";
-                    downloadFilename.textContent = msg.filename || "";
+                    downloadFilename.textContent = msg.filename || (activeJob ? activeJob.title : "");
 
                     const pct = msg.percent_num !== undefined ? msg.percent_num : (parseFloat(msg.percent) || 0);
                     progressBarFill.style.width = `${pct}%`;
@@ -562,27 +770,60 @@
 
             case "error":
                 showError(msg.error || "Download failed.");
-                downloadSection.style.display = "none";
-                videoSection.style.display = "flex";
+                if (downloadQueue.length > 0) {
+                    setTimeout(() => processNextInQueue(), 1000);
+                } else {
+                    activeJob = null;
+                    downloadSection.style.display = "none";
+                    updateQueueUI();
+                }
                 break;
 
             case "cancelled":
-                downloadSection.style.display = "none";
-                videoSection.style.display = "flex";
+                if (downloadQueue.length > 0) {
+                    setTimeout(() => processNextInQueue(), 400);
+                } else {
+                    activeJob = null;
+                    downloadSection.style.display = "none";
+                    updateQueueUI();
+                }
                 break;
         }
     }
 
     function onDownloadComplete(msg) {
+        const finishedTitle = activeJob ? activeJob.title : (msg.filename || "Video");
+        completedJobs.push({
+            title: finishedTitle,
+            filename: msg.filename,
+            download_dir: msg.download_dir,
+            already_existed: msg.already_existed,
+        });
+
+        // Advance to next queue item if any
+        if (downloadQueue.length > 0) {
+            downloadStatusText.textContent = "STATUS: COMPLETED! STARTING NEXT IN QUEUE...";
+            progressBarFill.style.width = "100%";
+            progressPercent.textContent = "100%";
+            setTimeout(() => {
+                processNextInQueue();
+            }, 600);
+            return;
+        }
+
+        // All queue items completed
+        activeJob = null;
         downloadSection.style.display = "none";
         completeSection.style.display = "block";
+        updateQueueUI();
+
         const titleEl = completeSection.querySelector("h3");
         if (msg.already_existed) {
             if (titleEl) titleEl.textContent = "ALREADY DOWNLOADED";
-            completeFilename.textContent = `${msg.filename || "Video"} (already exists in your folder)`;
+            completeFilename.textContent = `${msg.filename || finishedTitle} (already exists in your folder)`;
         } else {
-            if (titleEl) titleEl.textContent = "DOWNLOAD COMPLETE";
-            completeFilename.textContent = msg.filename || "Download complete";
+            if (titleEl) titleEl.textContent = completedJobs.length > 1 ? `ALL ${completedJobs.length} DOWNLOADS COMPLETE` : "DOWNLOAD COMPLETE";
+            completeFilename.textContent = msg.filename || finishedTitle;
         }
         if (completePath) {
             completePath.textContent = msg.download_dir ? `Location: ${msg.download_dir}` : "";
@@ -595,16 +836,14 @@
         if (activeWebSocket && activeWebSocket.readyState === WebSocket.OPEN) {
             activeWebSocket.send(JSON.stringify({ action: "cancel" }));
         }
-        downloadSection.style.display = "none";
-        videoSection.style.display = "flex";
     });
 
     // ---------- Event Listeners ----------
 
     // Fetch Info
     btnFetch.addEventListener("click", () => {
-        if (isDownloading()) {
-            showError("Parallel downloads are coming soon. Not yet supported.");
+        if (isDownloading() && downloadQueue.length >= MAX_QUEUE_SIZE) {
+            showError(`Download is running and queue is full (${MAX_QUEUE_SIZE}/${MAX_QUEUE_SIZE}). Please wait for downloads to complete.`);
             return;
         }
         const url = urlInput.value.trim();
@@ -660,6 +899,7 @@
     // Download Another
     btnDownloadAnother.addEventListener("click", () => {
         completeSection.style.display = "none";
+        completedJobs = [];
         urlInput.value = "";
         btnClearUrl.style.display = "none";
         urlInput.focus();
@@ -726,9 +966,14 @@
         });
     }
 
+    if (btnClearQueue) {
+        btnClearQueue.addEventListener("click", clearQueue);
+    }
+
     // ---------- Initialize ----------
     loadDownloadDir();
     loadCookieSetting();
+    loadSavedQueue();
 
 })();
 
