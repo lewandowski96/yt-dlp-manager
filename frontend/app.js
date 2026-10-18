@@ -38,6 +38,7 @@
 
     const completeSection = $("#complete-section");
     const completeFilename = $("#complete-filename");
+    const completePath = $("#complete-path");
     const btnOpenFolder = $("#btn-open-folder");
     const btnDownloadAnother = $("#btn-download-another");
 
@@ -494,13 +495,13 @@
         downloadSection.style.display = "block";
 
         // Reset progress UI
-        downloadStatusText.textContent = "Starting download...";
+        downloadStatusText.textContent = "STATUS: DOWNLOADING...";
         downloadFilename.textContent = "";
         progressBarFill.style.width = "0%";
         progressPercent.textContent = "0%";
-        progressSpeed.textContent = "";
-        progressEta.textContent = "";
-        downloadStatusIcon.innerHTML = '<div class="spinner-large"></div>';
+        progressSpeed.textContent = "-- KB/s";
+        progressEta.textContent = "ETA: --:--";
+        downloadStatusIcon.innerHTML = '<span class="status-pulse">&gt;&gt;</span>';
 
         const protocol = location.protocol === "https:" ? "wss:" : "ws:";
         const ws = new WebSocket(`${protocol}//${location.host}/ws/download`);
@@ -538,20 +539,20 @@
 
             case "progress":
                 if (msg.status === "downloading") {
-                    downloadStatusText.textContent = "Downloading...";
+                    downloadStatusText.textContent = "STATUS: DOWNLOADING...";
                     downloadFilename.textContent = msg.filename || "";
 
-                    const pct = parseFloat(msg.percent) || 0;
+                    const pct = msg.percent_num !== undefined ? msg.percent_num : (parseFloat(msg.percent) || 0);
                     progressBarFill.style.width = `${pct}%`;
-                    progressPercent.textContent = msg.percent;
-                    progressSpeed.textContent = msg.speed !== "N/A" ? msg.speed : "";
-                    progressEta.textContent = msg.eta !== "N/A" ? `ETA: ${msg.eta}` : "";
+                    progressPercent.textContent = `${pct.toFixed(1)}%`;
+                    progressSpeed.textContent = msg.speed !== "N/A" && msg.speed ? msg.speed : "-- KB/s";
+                    progressEta.textContent = msg.eta !== "N/A" && msg.eta ? (msg.eta.startsWith("ETA") ? msg.eta : `ETA: ${msg.eta}`) : "ETA: --:--";
                 } else if (msg.status === "post_processing") {
-                    downloadStatusText.textContent = "Post-processing...";
+                    downloadStatusText.textContent = "STATUS: POST-PROCESSING...";
                     progressBarFill.style.width = "100%";
                     progressPercent.textContent = "100%";
-                    progressSpeed.textContent = "";
-                    progressEta.textContent = "";
+                    progressSpeed.textContent = "-- KB/s";
+                    progressEta.textContent = "FINALIZING...";
                 }
                 break;
 
@@ -575,7 +576,17 @@
     function onDownloadComplete(msg) {
         downloadSection.style.display = "none";
         completeSection.style.display = "block";
-        completeFilename.textContent = msg.filename || "Download complete";
+        const titleEl = completeSection.querySelector("h3");
+        if (msg.already_existed) {
+            if (titleEl) titleEl.textContent = "ALREADY DOWNLOADED";
+            completeFilename.textContent = `${msg.filename || "Video"} (already exists in your folder)`;
+        } else {
+            if (titleEl) titleEl.textContent = "DOWNLOAD COMPLETE";
+            completeFilename.textContent = msg.filename || "Download complete";
+        }
+        if (completePath) {
+            completePath.textContent = msg.download_dir ? `Location: ${msg.download_dir}` : "";
+        }
     }
 
     // ---------- Cancel Download ----------

@@ -484,19 +484,32 @@ async def websocket_download(ws: WebSocket):
         progress_queue: Queue = Queue()
         cancel_event = threading.Event()
 
+        download_dir = get_downloads_dir()
+        downloaded_file = [None]
+
         def progress_hook(d):
             if cancel_event.is_set():
                 raise yt_dlp.utils.DownloadError("Download cancelled by user.")
+            if d.get("filename"):
+                downloaded_file[0] = os.path.basename(d["filename"])
             if d["status"] == "downloading":
+                total = d.get("total_bytes") or d.get("total_bytes_estimate") or 0
+                downloaded = d.get("downloaded_bytes", 0)
+                pct_val = round((downloaded / total * 100), 1) if total > 0 else 0
+                raw_pct = d.get("_percent_str", f"{pct_val}%")
+                clean_pct = re.sub(r"\x1b\[[0-9;]*[a-zA-Z]", "", str(raw_pct)).strip()
+                clean_speed = re.sub(r"\x1b\[[0-9;]*[a-zA-Z]", "", str(d.get("_speed_str", "N/A"))).strip()
+                clean_eta = re.sub(r"\x1b\[[0-9;]*[a-zA-Z]", "", str(d.get("_eta_str", "N/A"))).strip()
                 progress_queue.put({
                     "type": "progress",
                     "download_id": download_id,
                     "status": "downloading",
-                    "percent": d.get("_percent_str", "0%").strip(),
-                    "speed": d.get("_speed_str", "N/A").strip(),
-                    "eta": d.get("_eta_str", "N/A").strip(),
-                    "downloaded": d.get("downloaded_bytes", 0),
-                    "total": d.get("total_bytes") or d.get("total_bytes_estimate") or 0,
+                    "percent": clean_pct or f"{pct_val}%",
+                    "percent_num": pct_val,
+                    "speed": clean_speed,
+                    "eta": clean_eta,
+                    "downloaded": downloaded,
+                    "total": total,
                     "filename": os.path.basename(d.get("filename", "")),
                 })
             elif d["status"] == "finished":
@@ -516,44 +529,69 @@ async def websocket_download(ws: WebSocket):
                     "postprocessor": d.get("postprocessor", ""),
                 })
             elif d["status"] == "finished":
+                if d.get("info_dict", {}).get("_filename"):
+                    downloaded_file[0] = os.path.basename(d["info_dict"]["_filename"])
                 progress_queue.put({
                     "type": "progress",
                     "download_id": download_id,
                     "status": "post_processing_done",
                 })
 
-        download_dir = get_downloads_dir()
-
         def run_download():
             try:
+                print(f"\n▶️  [DOWNLOAD] Starting download for: {url}", flush=True)
+                print(f"    Format: {format_str}", flush=True)
+                print(f"    Destination: {download_dir}", flush=True)
                 ydl_opts = {
                     "format": format_str,
                     "outtmpl": str(download_dir / "%(title)s.%(ext)s"),
                     "progress_hooks": [progress_hook],
                     "postprocessor_hooks": [postprocessor_hook],
-                    "quiet": True,
-                    "no_warnings": True,
                     "noplaylist": True,
                     "merge_output_format": "mp4",
+                    "no_color": True,
                 }
-                ydl_opts.update(get_cookie_opts())
+                cookie_opts = get_cookie_opts()
+                ydl_opts.update(cookie_opts)
+                if cookie_opts:
+                    print(f"    Cookies: {cookie_opts}", flush=True)
                 if postprocessors:
                     ydl_opts["postprocessors"] = postprocessors
 
                 with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                    ydl.download([url])
+                    info = ydl.extract_info(url, download=False)
+                    target_name = os.path.basename(ydl.prepare_filename(info)) if info else "Video.mp4"
+                    expected_mp4 = os.path.splitext(target_name)[0] + ".mp4"
+                    already_existed = (download_dir / target_name).exists() or (download_dir / expected_mp4).exists()
+
+                    ret = ydl.download([url])
+                    if ret != 0:
+                        raise yt_dlp.utils.DownloadError(f"yt-dlp returned non-zero exit code: {ret}")
+
+                final_name = (
+                    downloaded_file[0]
+                    or (expected_mp4 if (download_dir / expected_mp4).exists() else target_name)
+                )
+                print(f"✅  [DOWNLOAD COMPLETE] {final_name} -> {download_dir} (already_existed={already_existed})\n", flush=True)
 
                 progress_queue.put({
                     "type": "complete",
                     "download_id": download_id,
                     "status": "complete",
+                    "filename": final_name,
+                    "download_dir": str(download_dir),
+                    "already_existed": already_existed,
                 })
             except Exception as e:
+                import traceback
+                print(f"\n❌  [DOWNLOAD ERROR] {e}\n", flush=True)
+                traceback.print_exc()
+                err_msg = clean_error_message(str(e), url)
                 progress_queue.put({
                     "type": "error",
                     "download_id": download_id,
                     "status": "error",
-                    "error": clean_error_message(str(e), url),
+                    "error": err_msg,
                 })
 
         # Start download in background thread
@@ -602,8 +640,11 @@ async def websocket_download(ws: WebSocket):
             await asyncio.sleep(0.2)
 
     except WebSocketDisconnect:
-        pass
+        print("[WS] Client disconnected", flush=True)
     except Exception as e:
+        import traceback
+        print(f"[WS ERROR] {e}", flush=True)
+        traceback.print_exc()
         try:
             await ws.send_json({"type": "error", "error": str(e)})
         except Exception:

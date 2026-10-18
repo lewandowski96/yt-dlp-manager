@@ -53,7 +53,7 @@ def main():
         host=HOST,
         port=PORT,
         log_level="info",
-        reload=False,
+        reload=True,
     )
 
 

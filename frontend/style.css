@@ -842,9 +842,17 @@ a:hover {
 }
 
 .download-filename {
-    font-size: 0.8rem;
+    font-size: 0.85rem;
+    color: var(--text-primary);
+    word-break: break-all;
+    font-weight: 600;
+}
+
+.download-path {
+    font-size: 0.75rem;
     color: var(--text-muted);
     word-break: break-all;
+    font-family: inherit;
 }
 
 .progress-bar-wrap {
@@ -854,29 +862,60 @@ a:hover {
 }
 
 .progress-bar {
-    height: 18px;
+    position: relative;
+    height: 20px;
     background: var(--bg-input);
     border: 1px solid var(--border-color);
     box-shadow: var(--shadow-inset);
     padding: 2px;
+    overflow: hidden;
 }
 
 .progress-bar-fill {
     height: 100%;
-    background: var(--accent-primary);
-    transition: width 0.15s ease-out;
+    background-color: var(--accent-primary);
+    background-image: repeating-linear-gradient(
+        90deg,
+        var(--accent-primary) 0px,
+        var(--accent-primary) 8px,
+        var(--bg-input) 8px,
+        var(--bg-input) 10px
+    );
+    box-shadow: 0 0 10px var(--accent-glow);
+    transition: width 0.2s cubic-bezier(0.25, 0.1, 0.25, 1);
+    position: relative;
+}
+
+.progress-bar-fill::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 2px;
+    height: 100%;
+    background: #ffffff;
+    box-shadow: 0 0 4px #ffffff, 0 0 8px var(--accent-primary);
 }
 
 .progress-stats {
     display: flex;
     justify-content: space-between;
-    font-size: 0.78rem;
+    font-size: 0.8rem;
     color: var(--text-secondary);
+    font-family: var(--font-mono);
+    letter-spacing: 0.03em;
 }
 
 #progress-percent {
     font-weight: 700;
     color: var(--accent-primary);
+    text-shadow: 0 0 6px var(--accent-glow);
+}
+
+#progress-speed,
+#progress-eta {
+    color: var(--text-secondary);
+    font-variant-numeric: tabular-nums;
 }
 
 /* ---------- Complete Section ---------- */
