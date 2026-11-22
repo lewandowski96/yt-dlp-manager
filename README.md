@@ -13,7 +13,9 @@
 
 <br/>
 
-![yt-dlp Manager - Amber Theme](assets/screenshots/hero_amber.png)
+![yt-dlp Manager Demo](assets/demo.gif)
+
+*([Watch full-resolution MP4 demo](assets/demo.mp4))*
 
 </div>
 
@@ -22,9 +24,11 @@
 ## Highlights
 
 - 🍪 **Age-Restricted & Auth Support** — Built-in **Cookie Sharing** from Chrome, Firefox, Safari, Brave, or Edge so you can download age-restricted, sensitive, and signed-in videos seamlessly.
+- 📋 **Smart Download Queue** — Queue up to 5 videos simultaneously while a download is already running, with individual format selection and automatic sequential processing.
 - 📁 **Configurable Download Destination** — Dedicated retro directory browser modal with breadcrumbs, subfolder drilldown, and persistent folder saving in `config.json`.
 - ⚡ **One-Click Quick Presets** — Instantly download **Best Quality**, **1080p**, **720p**, **480p**, **MP3 Audio (192kbps)**, or **M4A (AAC)**.
 - 🎛️ **Advanced Stream Inspector** — Interactive table of every available video and audio format stream with filtering (`[V+A]`, `[VIDEO]`, `[AUDIO]`).
+- 🎨 **Retro CRT Phosphor Themes** — Switch instantly between **Amber (`A`)**, **Green (`G`)**, and **Cyan (`C`)** monochrome terminal palettes.
 - 📊 **Real-time WebSocket Streaming** — Live progress bar, speed (MB/s), downloaded bytes, and ETA streamed directly to the UI.
 - 🛡️ **Intelligent Error Handling** — Clean, human-friendly messages for playlists, age gates, network issues, and missing cookies instead of raw terminal stack traces.
 - 🌐 **1,800+ Supported Sites** — YouTube, Vimeo, Twitter/X, Instagram, TikTok, Reddit, Twitch, and [many more](https://github.com/yt-dlp/yt-dlp/blob/master/supportedsites.md).
@@ -33,9 +37,9 @@
 
 ## Visual Tour
 
-| **Green Phosphor (`G`) & Stream Inspector** | **Retro Directory Browser (`[CHANGE]`)** |
-|:---:|:---:|
-| ![Green Phosphor](assets/screenshots/green_theme.png) | ![Directory Modal](assets/screenshots/directory_modal.png) |
+| **Amber Phosphor (`A`) & Quick Presets** | **Green Phosphor (`G`) & Stream Inspector** | **Retro Directory Browser (`[CHANGE]`)** |
+|:---:|:---:|:---:|
+| ![Amber Phosphor](assets/screenshots/hero_amber.png) | ![Green Phosphor](assets/screenshots/green_theme.png) | ![Directory Modal](assets/screenshots/directory_modal.png) |
 
 ---
 
@@ -103,6 +107,8 @@ yt-dlp-manager/
 │   ├── style.css           # Retro phosphor stylesheet & animations
 │   └── app.js              # State management, WebSocket & theme handling
 ├── assets/
+│   ├── demo.gif            # Animated walkthrough preview
+│   ├── demo.mp4            # Full-resolution H.264 walkthrough video
 │   └── screenshots/        # High-resolution README previews
 └── downloads/              # Default downloads directory (auto-created)
 ```
